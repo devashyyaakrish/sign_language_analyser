@@ -1,0 +1,41 @@
+# Dataset and generated training assets
+data/
+
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Jupyter artifacts
+.ipynb_checkpoints/
+
+# Model/checkpoint artifacts
+*.pth
+*.pt
+*.ckpt
+!app/best_asl_model.pth
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS/editor noise
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Frontend build artifacts (sign-language-translator)
+sign-language-translator/node_modules/
+sign-language-translator/.next/
+sign-language-translator/out/
+sign-language-translator/.turbo/
+
+asl_landmarks_modern.csv
+asl_landmarks_normalized.csv
