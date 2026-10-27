@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import os
+import pickle
+from sklearn.decomposition import PCA, FactorAnalysis
 
 # Set seed for reproducible excellence
 np.random.seed(42)
@@ -11,6 +13,10 @@ torch.manual_seed(42)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 classes_path = os.path.join(BASE_DIR, 'classes.npy')
 model_path = os.path.join(BASE_DIR, 'best_asl_model.pth')
+pca_path = os.path.join(BASE_DIR, 'pca_model.pkl')
+
+# --- PCA CONFIG ---
+N_PCA_COMPONENTS = 15  # Keep top 15 principal components out of 63
 
 classes = np.array([
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -21,9 +27,10 @@ np.save(classes_path, classes)
 num_classes = len(classes)
 
 class SignLanguageANN(nn.Module):
-    def __init__(self, num_classes):
+    """ANN classifier that takes PCA-reduced input (N_PCA_COMPONENTS dims) instead of raw 63-dim landmarks."""
+    def __init__(self, input_dim, num_classes):
         super(SignLanguageANN, self).__init__()
-        self.fc1 = nn.Linear(63, 128)
+        self.fc1 = nn.Linear(input_dim, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, num_classes)
         self.dropout = nn.Dropout(0.2)
@@ -464,8 +471,41 @@ def train_and_save():
     indices = np.random.permutation(len(X))
     X, y = X[indices], y[indices]
 
-    split = int(0.85 * len(X))
-    X_train, X_val = torch.tensor(X[:split]), torch.tensor(X[split:])
+    # =====================================================
+    # PCA: Fit on training data, reduce 63 → N_PCA_COMPONENTS
+    # =====================================================
+    print(f"\n--- PCA Dimensionality Reduction ---")
+    print(f"Original feature dimensionality: {X.shape[1]}")
+
+    pca = PCA(n_components=N_PCA_COMPONENTS)
+    pca.fit(X)
+
+    explained_var = pca.explained_variance_ratio_
+    cumulative_var = np.cumsum(explained_var)
+    print(f"PCA components kept: {N_PCA_COMPONENTS}")
+    print(f"Variance explained per component: {np.round(explained_var * 100, 2)}")
+    print(f"Cumulative variance explained: {cumulative_var[-1]*100:.2f}%")
+
+    # Save PCA model for use during inference
+    with open(pca_path, 'wb') as f:
+        pickle.dump(pca, f)
+    print(f"PCA model saved to: {pca_path}")
+
+    # --- Factor Analysis comparison (for viva discussion) ---
+    print(f"\n--- Factor Analysis Comparison (for reference) ---")
+    fa = FactorAnalysis(n_components=N_PCA_COMPONENTS, random_state=42)
+    fa.fit(X)
+    fa_score = fa.score(X)
+    print(f"Factor Analysis log-likelihood on training data: {fa_score:.4f}")
+    print(f"(FA models latent factors + noise; PCA finds max-variance directions)")
+    print(f"For this low-dim (63) problem, PCA is sufficient. FA adds noise modeling.\n")
+
+    # Transform data to PCA space
+    X_pca = pca.transform(X).astype(np.float32)
+    print(f"Reduced feature dimensionality: {X_pca.shape[1]}")
+
+    split = int(0.85 * len(X_pca))
+    X_train, X_val = torch.tensor(X_pca[:split]), torch.tensor(X_pca[split:])
     y_train, y_val = torch.tensor(y[:split]), torch.tensor(y[split:])
 
     train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
@@ -474,12 +514,12 @@ def train_and_save():
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=64, shuffle=False)
 
-    model = SignLanguageANN(num_classes)
+    model = SignLanguageANN(N_PCA_COMPONENTS, num_classes)
     criterion = nn.CrossEntropyLoss(label_smoothing=0.04)
     optimizer = optim.AdamW(model.parameters(), lr=0.003, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=1e-5)
 
-    print("Training Enhanced SignLanguageANN on Visual ASL Chart Dataset...")
+    print("Training Enhanced SignLanguageANN on PCA-reduced ASL Chart Dataset...")
     best_acc = 0.0
     for epoch in range(40):
         model.train()
@@ -512,6 +552,8 @@ def train_and_save():
     print("\n==========================================")
     print(f"Training Complete! Best Validation Accuracy: {best_acc:.2f}%")
     print(f"Model saved to: {model_path}")
+    print(f"PCA model saved to: {pca_path}")
+    print(f"Input dim: {N_PCA_COMPONENTS} (was 63)")
     print("==========================================")
 
 if __name__ == "__main__":

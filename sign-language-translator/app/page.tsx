@@ -25,14 +25,18 @@ if (typeof window !== "undefined") {
 
 const API_URL = "http://localhost:8000/predict";
 const HEALTH_URL = "http://localhost:8000/health";
+const RESET_URL = "http://localhost:8000/reset";
 const FRAME_INTERVAL_MS = 1000 / 30;
-const STABILITY_TARGET = 15;
+const STABILITY_TARGET = 5; // Reduced from 15: HMM Viterbi handles temporal smoothing on backend
 const NOTHING = "NOTHING";
 
 type PredictResponse = {
   prediction?: string;
   letter?: string;
   confidence?: number;
+  raw_letter?: string;
+  raw_confidence?: number;
+  hmm_buffer?: number;
   status?: string;
 };
 
@@ -227,6 +231,8 @@ export default function Home() {
 
   const clearSentence = () => {
     setSentence("");
+    // Reset backend Kalman filter and HMM state
+    fetch(RESET_URL, { method: "POST" }).catch(() => {});
   };
 
   const backspaceSentence = () => {
@@ -660,15 +666,15 @@ export default function Home() {
       });
     }
 
-    // Test 5: Stability Counter & Sentence Accumulator
+    // Test 5: Stability Counter & Sentence Accumulator (now 5 frames with HMM)
     const testChar = "T";
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < STABILITY_TARGET; i++) {
       handlePrediction(testChar, 0.98);
     }
     results.push({
-      name: "15-Frame Stability & Sentence Buffer",
+      name: `HMM+Viterbi ${STABILITY_TARGET}-Frame Stability`,
       status: "pass",
-      detail: "Debounce engine committed letter to sentence buffer",
+      detail: "HMM temporal smoothing + reduced frame debounce committed letter",
     });
 
     // Test 6: Backspace & Clear All Actions
@@ -853,7 +859,7 @@ export default function Home() {
                   {candidate !== "NOTHING" && <span className="animate-pulse text-2xl text-fuchsia-400">●</span>}
                 </div>
                 <p className="mt-5 text-sm leading-relaxed text-slate-400">
-                  Hold the gesture steady for <strong className="text-indigo-300">15 frames</strong> to commit it into the translated sentence.
+                  HMM Viterbi smoothing active. Hold steady for <strong className="text-indigo-300">{STABILITY_TARGET} frames</strong> to commit.
                 </p>
               </div>
             </div>

@@ -2,10 +2,12 @@ import os
 import glob
 import cv2
 import torch
+import pickle
+import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from main import model, classes
+from main import model, classes, pca_model, n_pca_components
 
 def run_evaluation():
     # Setup MediaPipe Tasks Vision HandLandmarker
@@ -67,9 +69,13 @@ def run_evaluation():
                 landmarks[i+1] - wrist_y,
                 landmarks[i+2] - wrist_z
             ])
+
+        # PCA projection
+        norm_arr = np.array(normalized_landmarks, dtype=np.float32).reshape(1, -1)
+        pca_features = pca_model.transform(norm_arr).astype(np.float32)
             
-        # Run inference
-        input_tensor = torch.FloatTensor(normalized_landmarks).unsqueeze(0)
+        # Run inference on PCA-reduced features
+        input_tensor = torch.FloatTensor(pca_features)
         with torch.no_grad():
             outputs = model(input_tensor)
             _, predicted_idx = torch.max(outputs, 1)
